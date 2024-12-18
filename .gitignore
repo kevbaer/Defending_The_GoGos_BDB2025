@@ -1,3 +1,4 @@
 *.csv
 .Rproj.user
 data/tracking_train.parquet
+data/tracking_test.parquet
