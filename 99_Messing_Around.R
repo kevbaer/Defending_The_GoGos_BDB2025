@@ -20,16 +20,7 @@ library(arrow)
 # write_parquet(tracking_test, "data/tracking_test.parquet")
 
 
-tracking <- open_dataset("data/tracking_train.parquet")
-games <- read_csv("data/games.csv")
-plays <- read_csv("data/plays.csv") |> 
-  select(-starts_with("pff_runConcept"), -qbKneel, -qbSneak, - rushLocationType)
-players <- read_csv("data/players.csv")
-player_play <- read_csv("data/player_play.csv")
-
-
-
-tracking_added <- tracking |>
+tracking <- read_parquet("data/tracking_train.parquet") |> 
   mutate(
     new_y = ifelse(playDirection == "left", 120 - x, x),
     new_x = ifelse(playDirection == "left", 160 / 3 - y, y),
@@ -40,22 +31,24 @@ tracking_added <- tracking |>
   ) |> 
   mutate(y = new_y, x = new_x) |> 
   select(-new_x, -new_y) |> 
-  head(n = 10) |> 
-  collect() 
+  group_by(gameId, playId, nflId) |> 
+  mutate(lag_half_sec_x = lag(x, n = 5) , 
+         lag_half_sec_y = lag(y, n = 5))
 
+games <- read_csv("data/games.csv")
+
+plays <- read_csv("data/plays.csv") |> 
+  select(-starts_with("pff_runConcept"), -qbKneel, -qbSneak, - rushLocationType)
+
+players <- read_csv("data/players.csv")
+
+player_play <- read_csv("data/player_play.csv")
 
 
 tracking_sample <- tracking |> 
   slice_sample(n = 500) |> 
   collect()
 
-
-
-adding_lag <- as_tibble(tracking) |> 
-  group_by(gameId, playId, nflId) |> 
-  mutate(lag_half_sec_x = lag(x, n = 5) , 
-         lag_half_sec_y = lag(y, n = 5))
-  
 
 
 player_play_sample <- player_play |> 
