@@ -1,7 +1,9 @@
+# Mailroom ----------------------------------------------------------------
 library(tidyverse)
 library(nflverse)  
-
 library(arrow)
+source("09_makeVizFunc.R")
+# Parquet Write -------------------------------------------------------------
 
 # tracking_train <- read_csv("data/tracking_week_1.csv") |>
 #   bind_rows(read_csv("data/tracking_week_2.csv")) |>
@@ -19,6 +21,7 @@ library(arrow)
 # 
 # write_parquet(tracking_test, "data/tracking_test.parquet")
 
+# Mod and Read ------------------------------------------------------------
 
 tracking <- read_parquet("data/tracking_train.parquet") |> 
   mutate(
@@ -30,10 +33,11 @@ tracking <- read_parquet("data/tracking_train.parquet") |>
     o = ifelse(o > 360, o - 360, o)
   ) |> 
   mutate(y = new_y, x = new_x) |> 
-  select(-new_x, -new_y) |> 
+  select(-c(new_x, new_y, time)) |> 
   group_by(gameId, playId, nflId) |> 
   mutate(lag_half_sec_x = lag(x, n = 5) , 
-         lag_half_sec_y = lag(y, n = 5))
+         lag_half_sec_y = lag(y, n = 5)) |> 
+  ungroup()
 
 games <- read_csv("data/games.csv")
 
@@ -42,18 +46,13 @@ plays <- read_csv("data/plays.csv") |>
 
 players <- read_csv("data/players.csv")
 
-player_play <- read_csv("data/player_play.csv")
+player_play <- read_csv("data/player_play.csv") |> 
+  select(gameId, playId, nflId, inMotionAtBallSnap, shiftSinceLineset,
+         motionSinceLineset, wasRunningRoute, routeRan, 
+         pff_defensiveCoverageAssignment, pff_primaryDefensiveCoverageMatchupNflId,
+         pff_secondaryDefensiveCoverageMatchupNflId)
 
-
-tracking_sample <- tracking |> 
-  slice_sample(n = 500) |> 
-  collect()
-
-
-
-player_play_sample <- player_play |> 
-  slice_sample(n = 10)
-
+# Ftn and nflverse --------------------------------------------------------
 
 
 ftn <- load_ftn_charting(season = 2022) |> 
@@ -70,3 +69,51 @@ ftn_added <- left_join(ftn, pbp, by = join_by(nflverse_game_id == game_id, nflve
   mutate(old_game_id = as.double(old_game_id))
 
 plays_added <- left_join(plays, ftn_added, by = join_by(gameId == old_game_id, playId ==nflverse_play_id))
+
+
+plays_filtering <- plays_added |> 
+  filter(isDropback & pff_manZone == "Man" & (!is_screen_pass) & (!is_trick_play) & 
+         (!qbSpike)) |> 
+  select(-c(isDropback, is_screen_pass, is_trick_play, qbSpike, preSnapHomeScore, 
+            preSnapVisitorScore, playNullifiedByPenalty, preSnapHomeTeamWinProbability,
+            preSnapVisitorTeamWinProbability, timeToSack, passTippedAtLine, unblockedPressure,
+            penaltyYards, yardsGained, homeTeamWinProbabilityAdded, visitorTeamWinProbilityAdded,
+            expectedPointsAdded, expectedPoints, pff_runPassOption, is_qb_out_of_pocket))
+
+
+joined <- inner_join(tracking, plays_filtering, by = join_by(gameId, playId)) |> 
+  left_join(player_play, by = join_by(gameId, playId, nflId))
+# Sample Play -------------------------------------------------------------
+
+
+
+
+offense_snap <- joined |> 
+  filter(gameId == 2022100201 & playId == 1271) |> 
+  filter(club == possessionTeam) |> 
+  filter(event == "ball_snap") |> 
+  group_by(gameId, playId)|> 
+  mutate(left = min(x)) |> 
+  mutate(right = max(x)) |> 
+  ungroup() |> 
+  filter(left < x & x < right & wasRunningRoute)
+
+
+
+plays_857 <- plays_filtering |> 
+  filter(gameId == 2022100201 & playId == 1271)
+tracking_857 <- joined |> 
+  filter(gameId == 2022100201 & playId == 1271)
+
+plays_2876 <- plays_filtering |> 
+  filter(gameId == 2022100905 & playId == 2876)
+tracking_2876 <- joined |> 
+  filter(gameId == 2022100905 & playId == 2876)
+
+# Viz ---------------------------------------------------------------------
+
+makeViz(tracking_2876, plays_2876, "NE", "DET", "#002244", "#0076B6", 2022, 5,
+         yardhigh = 65)
+
+# makeViz(tracking_857, plays_857, "ATL", "CLE", "#a71930", "#FF3C00", 2022, 4,
+#         yardlow = 25, yardhigh = 120-35)
