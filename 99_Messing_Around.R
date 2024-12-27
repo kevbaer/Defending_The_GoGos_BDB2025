@@ -47,7 +47,9 @@ plays <- read_csv("data/plays.csv") |>
 
 players <- read_csv("data/players.csv")
 
-player_play <- read_csv("data/player_play.csv") |> 
+player_play <- read_csv("data/player_play.csv", 
+                        col_types = list(penaltyNames = col_character(),
+                                         blockedPlayerNFLId3 = col_double())) |> 
   select(gameId, playId, nflId, inMotionAtBallSnap, shiftSinceLineset,
          motionSinceLineset, wasRunningRoute, routeRan, 
          pff_defensiveCoverageAssignment, pff_primaryDefensiveCoverageMatchupNflId,
@@ -131,7 +133,10 @@ slots <- joined |>
   select(-is_fb) |> 
   ungroup() |> 
   filter(left < x & x < right & wasRunningRoute & (x < fb_loc - 5 | x > fb_loc + 5)) |> 
-  mutate(is_slot = TRUE)
+  mutate(is_slot = TRUE) |> 
+  mutate(dist_football = abs(x - fb_loc)) |> 
+  mutate(dist_outside = pmin(abs(x - left), abs(x - right)))
+
 
 joined_2 <- joined |> 
   left_join(slots |> select(gameId, playId, nflId, is_slot), 
@@ -164,11 +169,20 @@ slot_mvt <- joined_2 |>
     all(turn == "vert") ~ "vert",
   )) |> 
   slice_head(n = 1) |> 
-  ungroup()
+  ungroup() 
+
+# |> 
+#   mutate(start_break = case_when(
+#     turn == direction_break & direction_break != "vert" & 
+#       playDirection == "right" ~ lag_half_sec_y - absoluteYardlineNumber,
+#     turn == direction_break & direction_break != "vert" & 
+#       playDirection == "left" ~ lag_half_sec_y - (120-absoluteYardlineNumber)
+#   ))
 
 
 slots_2 <- slots |> 
   left_join(slot_mvt |> select(gameId, playId, nflId, direction_break),
             by = join_by(gameId, playId, nflId)) |> 
   filter(!is.na(direction_break))
+
 
