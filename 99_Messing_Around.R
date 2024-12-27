@@ -2,6 +2,7 @@
 library(tidyverse)
 library(nflverse)  
 library(arrow)
+library(NISTunits)
 source("09_makeVizFunc.R")
 # Parquet Write -------------------------------------------------------------
 
@@ -65,10 +66,12 @@ ftn <- load_ftn_charting(season = 2022) |>
 pbp <- load_pbp(2022) |> 
   select(play_id, old_game_id, game_id)
 
-ftn_added <- left_join(ftn, pbp, by = join_by(nflverse_game_id == game_id, nflverse_play_id == play_id)) |> 
+ftn_added <- left_join(ftn, pbp, by = join_by(nflverse_game_id == game_id, 
+                                              nflverse_play_id == play_id)) |> 
   mutate(old_game_id = as.double(old_game_id))
 
-plays_added <- left_join(plays, ftn_added, by = join_by(gameId == old_game_id, playId ==nflverse_play_id))
+plays_added <- left_join(plays, ftn_added, by = join_by(gameId == old_game_id, 
+                                                        playId ==nflverse_play_id))
 
 
 plays_filtering <- plays_added |> 
@@ -85,20 +88,10 @@ joined <- inner_join(tracking, plays_filtering, by = join_by(gameId, playId)) |>
   left_join(player_play, by = join_by(gameId, playId, nflId))
 # Sample Play -------------------------------------------------------------
 
-
-
-
-offense_snap <- joined |> 
-  filter(gameId == 2022100201 & playId == 1271) |> 
-  filter(club == possessionTeam) |> 
-  filter(event == "ball_snap") |> 
-  group_by(gameId, playId)|> 
-  mutate(left = min(x)) |> 
-  mutate(right = max(x)) |> 
-  ungroup() |> 
-  filter(left < x & x < right & wasRunningRoute)
-
-
+plays_824 <- plays_filtering |> 
+  filter(gameId == 2022091113 & playId == 824)
+tracking_824 <- joined |> 
+  filter(gameId == 2022091113 & playId == 824)
 
 plays_857 <- plays_filtering |> 
   filter(gameId == 2022100201 & playId == 1271)
@@ -115,5 +108,67 @@ tracking_2876 <- joined |>
 makeViz(tracking_2876, plays_2876, "NE", "DET", "#002244", "#0076B6", 2022, 5,
          yardhigh = 65)
 
-# makeViz(tracking_857, plays_857, "ATL", "CLE", "#a71930", "#FF3C00", 2022, 4,
-#         yardlow = 25, yardhigh = 120-35)
+makeViz(tracking_857, plays_857, "ATL", "CLE", "#a71930", "#FF3C00", 2022, 4,
+        yardlow = 25, yardhigh = 120-35)
+
+makeViz(tracking_824, plays_824, "TB", "DAL", "#a71930", "#0076B6", 2022, 5,
+        yardlow = 70)
+
+# Slots -------------------------------------------------------------------
+
+
+slots <- joined |> 
+  filter(club == possessionTeam|club == "football") |> 
+  filter(event == "ball_snap") |> 
+  group_by(gameId, playId)|> 
+  mutate(left = min(x)) |> 
+  mutate(right = max(x)) |> 
+  mutate(is_fb = case_when(
+    club == "football" ~ x,
+    .default = NA
+  )) |> 
+  mutate(fb_loc = max(is_fb, na.rm = TRUE)) |> 
+  select(-is_fb) |> 
+  ungroup() |> 
+  filter(left < x & x < right & wasRunningRoute & (x < fb_loc - 5 | x > fb_loc + 5)) |> 
+  mutate(is_slot = TRUE)
+
+joined_2 <- joined |> 
+  left_join(slots |> select(gameId, playId, nflId, is_slot), 
+            by = join_by(gameId, playId, nflId)) |> 
+  group_by(gameId, playId, nflId) |> 
+  mutate(snap_frame = case_when(
+    frameType == "SNAP" ~ frameId
+  )) |> 
+  mutate(snap_frame = max(snap_frame, na.rm = TRUE)) |> 
+  ungroup()
+
+slot_mvt <- joined_2 |> 
+  filter(is_slot) |> 
+  filter(frameType == "AFTER_SNAP" & 
+         frameId < snap_frame + ceiling(timeInTackleBox * 10)) |> 
+  mutate(delta_x = x - lag_half_sec_x,
+         delta_y = y - lag_half_sec_y) |> 
+  mutate(ang_rad = atan2(delta_y, delta_x)) |> 
+  mutate(ang_deg = NISTradianTOdeg(ang_rad)) |> 
+  mutate(turn = case_when(
+    ang_deg < 45 & ang_deg > -45 ~ "right",
+    ang_deg > 135 | ang_deg < -135 ~ "left",
+    .default = "vert"
+  )) |> 
+  group_by(gameId, playId, nflId) |> 
+  mutate(direction_break = case_when(
+    any(turn == "left") & any(turn == "right") ~ "both",
+    any(turn == "left") & (!any(turn == "right")) ~ "left",
+    any(turn == "right") & (!any(turn == "left")) ~ "right",
+    all(turn == "vert") ~ "vert",
+  )) |> 
+  slice_head(n = 1) |> 
+  ungroup()
+
+
+slots_2 <- slots |> 
+  left_join(slot_mvt |> select(gameId, playId, nflId, direction_break),
+            by = join_by(gameId, playId, nflId)) |> 
+  filter(!is.na(direction_break))
+
