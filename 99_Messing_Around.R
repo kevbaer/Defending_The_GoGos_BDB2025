@@ -3,6 +3,7 @@ library(tidyverse)
 library(nflverse)  
 library(arrow)
 library(NISTunits)
+library(tidymodels)
 source("09_makeVizFunc.R")
 # Parquet Write -------------------------------------------------------------
 
@@ -37,7 +38,8 @@ tracking <- read_parquet("data/tracking_train.parquet") |>
   select(-c(new_x, new_y, time)) |> 
   group_by(gameId, playId, nflId) |> 
   mutate(lag_half_sec_x = lag(x, n = 5) , 
-         lag_half_sec_y = lag(y, n = 5)) |> 
+         lag_half_sec_y = lag(y, n = 5),
+         lag_half_sec_s = lag(s, n = 5)) |> 
   ungroup()
 
 games <- read_csv("data/games.csv")
@@ -105,6 +107,13 @@ plays_2876 <- plays_filtering |>
 tracking_2876 <- joined |> 
   filter(gameId == 2022100905 & playId == 2876)
 
+tracking_2353 <- joined |> 
+  filter(gameId == 2022091108 & playId == 2353)
+
+plays_2353 <- plays_filtering |> 
+  filter(gameId == 2022091108 & playId == 2353)
+
+
 # Viz ---------------------------------------------------------------------
 
 makeViz(tracking_2876, plays_2876, "NE", "DET", "#002244", "#0076B6", 2022, 5,
@@ -115,6 +124,8 @@ makeViz(tracking_857, plays_857, "ATL", "CLE", "#a71930", "#FF3C00", 2022, 4,
 
 makeViz(tracking_824, plays_824, "TB", "DAL", "#a71930", "#0076B6", 2022, 5,
         yardlow = 70)
+
+makeViz(tracking_2353, plays_2353, "TEN", "NYG", "#0076B6", "#a71930", 2022, 3)
 
 # Slots -------------------------------------------------------------------
 
@@ -157,27 +168,30 @@ slot_mvt <- joined_2 |>
   mutate(ang_rad = atan2(delta_y, delta_x)) |> 
   mutate(ang_deg = NISTradianTOdeg(ang_rad)) |> 
   mutate(turn = case_when(
-    ang_deg < 45 & ang_deg > -45 ~ "right",
-    ang_deg > 135 | ang_deg < -135 ~ "left",
+    ang_deg < 45 & ang_deg > -45 & lag_half_sec_s > 1 ~ "right",
+    ang_deg > 135 | ang_deg < -135 & lag_half_sec_s > 1 ~ "left",
     .default = "vert"
-  )) |> 
-  group_by(gameId, playId, nflId) |> 
+  ))|>
+  group_by(gameId, playId, nflId) |>
   mutate(direction_break = case_when(
     any(turn == "left") & any(turn == "right") ~ "both",
     any(turn == "left") & (!any(turn == "right")) ~ "left",
     any(turn == "right") & (!any(turn == "left")) ~ "right",
     all(turn == "vert") ~ "vert",
-  )) |> 
-  slice_head(n = 1) |> 
-  ungroup() 
+  )) |>
+  slice_head(n = 1) |>
+  ungroup()
+  # |>
+  # mutate(new_abs_yardline = ifelse(playDirection == "left",
+  #                                  120 - absoluteYardlineNumber,
+  #                                  absoluteYardlineNumber)) |>
+  # mutate(start_break = case_when(
+  #   turn == direction_break & direction_break != "vert" &
+  #     playDirection == "right" ~ y - new_abs_yardline,
+  #   turn == direction_break & direction_break != "vert" &
+  #     playDirection == "left" ~ y - new_abs_yardline
+  # )) 
 
-# |> 
-#   mutate(start_break = case_when(
-#     turn == direction_break & direction_break != "vert" & 
-#       playDirection == "right" ~ lag_half_sec_y - absoluteYardlineNumber,
-#     turn == direction_break & direction_break != "vert" & 
-#       playDirection == "left" ~ lag_half_sec_y - (120-absoluteYardlineNumber)
-#   ))
 
 
 slots_2 <- slots |> 
@@ -186,3 +200,67 @@ slots_2 <- slots |>
   filter(!is.na(direction_break))
 
 
+slots_predict <- slots_2 |> 
+  select(direction_break, club, down, yardsToGo, absoluteYardlineNumber, 
+         offenseFormation, receiverAlignment, starting_hash, qb_location,
+         is_motion, dist_football, dist_outside)
+
+set.seed(11042004)
+slots_predict_split <- initial_split(slots_predict, prop = 0.8, strata = direction_break)
+slots_predict_train <- training(slots_predict_split)
+slots_predict_test <- testing(slots_predict_split)
+
+slots_predict_recipe <- recipe(direction_break ~ ., data = slots_predict_train) |> 
+  step_bin2factor(all_logical_predictors()) |> 
+  step_unknown(all_nominal_predictors()) |> 
+  step_dummy(all_nominal_predictors())
+  
+folds <- vfold_cv(slots_predict_train, v = 5, repeats = 3)
+
+xgb_spec <- boost_tree(
+  trees = tune(),
+  tree_depth = tune(),
+  min_n = tune(),
+  loss_reduction = tune(),
+  sample_size = tune(),
+  mtry = tune(),
+  learn_rate = tune()) |> 
+  set_engine("xgboost") |> 
+  set_mode("classification")
+
+xgb_grid <- grid_space_filling(
+  trees(),
+  tree_depth(),
+  min_n(),
+  loss_reduction(),
+  sample_size = sample_prop(),
+  finalize(mtry(), slots_predict_train),
+  learn_rate(),
+  size = 50
+)
+xgb_wf <-
+  workflow() |> 
+  add_recipe(slots_predict_recipe) |> 
+  add_model(xgb_spec)
+
+doParallel::registerDoParallel(cores = 5)
+xgb_res <-
+  tune_grid(
+    xgb_wf,
+    resamples = folds,
+    grid = xgb_grid,
+    control = control_grid(save_pred = TRUE, save_workflow = TRUE),
+    metrics = metric_set(roc_auc)
+  )
+
+best <- xgb_res |> 
+  select_best(metric = "roc_auc")
+
+final_mod <- xgb_res |> 
+  extract_workflow() |> 
+  finalize_workflow(best) |> 
+  last_fit(split = slots_predict_split)
+
+collect_metrics(final_mod)
+
+beepr::beep("fanfare")
