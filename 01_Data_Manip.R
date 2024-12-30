@@ -22,6 +22,12 @@ library(NISTunits)
 # write_parquet(tracking_test, "data/tracking_test.parquet")
 
 # Mod and Read ------------------------------------------------------------
+
+fn_first <- function(x, na_rm=FALSE) {
+  if(all(is.na(x))) NA else first(x, na_rm = na_rm)
+}
+
+
 tracking <- read_parquet("data/tracking_train.parquet") |> 
   mutate(
     new_y = ifelse(playDirection == "left", 120 - x, x),
@@ -36,7 +42,7 @@ tracking <- read_parquet("data/tracking_train.parquet") |>
   group_by(gameId, playId, nflId) |> 
   mutate(lag_half_sec_x = lag(x, n = 5) , 
          lag_half_sec_y = lag(y, n = 5),
-         lag_half_sec_s = lag(s, n = 5)) |> 
+         lag_half_sec_s = lag(s, n = 5)) |>
   ungroup()
 
 games <- read_csv("data/games.csv")
@@ -80,7 +86,10 @@ plays_added <- left_join(plays, ftn_added, by = join_by(gameId == old_game_id,
             expectedPointsAdded, expectedPoints, pff_runPassOption, is_qb_out_of_pocket))
 
 joined <- inner_join(tracking, plays_filtering, by = join_by(gameId, playId)) |> 
-  left_join(player_play, by = join_by(gameId, playId, nflId))
+  left_join(player_play, by = join_by(gameId, playId, nflId)) |> 
+  mutate(new_abs_yardline = ifelse(playDirection == "left",
+                                   120 - absoluteYardlineNumber,
+                                   absoluteYardlineNumber))
 # Slots -------------------------------------------------------------------
 slots <- joined |> 
   filter(club == possessionTeam|club == "football") |> 
@@ -96,6 +105,7 @@ slots <- joined |>
   select(-is_fb) |> 
   ungroup() |> 
   filter(left < x & x < right & wasRunningRoute & (x < fb_loc - 5 | x > fb_loc + 5)) |> 
+  filter(!(new_abs_yardline - y > 3)) |> 
   mutate(is_slot = TRUE) |> 
   mutate(dist_football = abs(x - fb_loc)) |> 
   mutate(dist_outside = pmin(abs(x - left), abs(x - right)))
@@ -122,8 +132,8 @@ slot_mvt <- joined_2 |>
   mutate(turn = case_when(
     (((ang_deg < 45) & (ang_deg > -45)) | ((ang_deg > 135) | (ang_deg < -135))) &
       (lag_half_sec_s > 1) & (abs(26 - x) < abs(26 - lag_half_sec_x)) ~ "inside",
-       (((ang_deg < 45) & (ang_deg > -45)) | ((ang_deg > 135) | (ang_deg < -135))) &
-         (lag_half_sec_s > 1) & (abs(157/6 - x) > abs(157/6 - lag_half_sec_x)) ~ "outside",
+    (((ang_deg < 45) & (ang_deg > -45)) | ((ang_deg > 135) | (ang_deg < -135))) &
+      (lag_half_sec_s > 1) & (abs(157/6 - x) > abs(157/6 - lag_half_sec_x)) ~ "outside",
     .default = "vert"
   ))|>
   group_by(gameId, playId, nflId) |>
@@ -133,22 +143,21 @@ slot_mvt <- joined_2 |>
     any(turn == "outside") & (!any(turn == "inside")) ~ "outside",
     all(turn == "vert") ~ "vert",
   )) |> 
-  slice_head(n = 1) |>
-  ungroup() 
+  ungroup() |>
+  mutate(start_break = case_when(
+    (turn == direction_break & direction_break != "vert") &
+      (playDirection == "right") ~ y - new_abs_yardline,
+    (turn == direction_break & direction_break != "vert") &
+      (playDirection == "left") ~ y - new_abs_yardline
+  )) |> 
+  group_by(gameId, playId, nflId) |> 
+  mutate(start_break_play = fn_first(start_break, na_rm = TRUE)) |> 
+  slice_head(n = 1) |> 
+  ungroup()
   
-# |>
-# mutate(new_abs_yardline = ifelse(playDirection == "left",
-#                                  120 - absoluteYardlineNumber,
-#                                  absoluteYardlineNumber)) |>
-# mutate(start_break = case_when(
-#   turn == direction_break & direction_break != "vert" &
-#     playDirection == "right" ~ y - new_abs_yardline,
-#   turn == direction_break & direction_break != "vert" &
-#     playDirection == "left" ~ y - new_abs_yardline
-# )) 
 
 slots_2 <- slots |> 
-  left_join(slot_mvt |> select(gameId, playId, nflId, direction_break),
+  left_join(slot_mvt |> select(gameId, playId, nflId, direction_break, start_break_play),
             by = join_by(gameId, playId, nflId)) |> 
   filter(!is.na(direction_break))
 
@@ -168,3 +177,10 @@ slots_predict <- slots_3 |>
   select(direction_break, club, yardsToGo, absoluteYardlineNumber, 
          offenseFormation, receiverAlignment, dist_football, dist_outside, cb_align_x,
          cb_align_y)
+
+slots_predict_break <- slots_3 |> 
+  select(start_break_play, club, yardsToGo, absoluteYardlineNumber, 
+         offenseFormation, receiverAlignment, dist_football, dist_outside, cb_align_x,
+         cb_align_y) |> 
+  filter(!is.na(start_break_play))
+

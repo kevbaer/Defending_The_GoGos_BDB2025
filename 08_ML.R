@@ -1,12 +1,11 @@
 # Mailroom ----------------------------------------------------------------
 library(tidymodels)
 library(DALEXtra)
-
-# library(stacks)
-# library(discrim)
-# library(plsmod)
-# library(rules)
-# library(finetune)
+library(rules)
+library(plsmod)
+library(finetune)
+library(Cubist)
+library(stacks)
 source("01_Data_Manip.R")
 # Modeling ----------------------------------------------------------------
 slots_predict_z <- slots_predict |> 
@@ -15,9 +14,9 @@ slots_predict_z <- slots_predict |>
          direction_break = as.factor(direction_break),  
          receiverAlignment = as.factor(receiverAlignment))
 
-#set.seed(11042004)
-set.seed(06062006)
-slots_predict_split <- initial_split(slots_predict_z, prop = 0.8)
+set.seed(11042004)
+#set.seed(06062006)
+slots_predict_split <- initial_split(slots_predict_z, prop = 0.8, strata = direction_break)
 slots_predict_train <- training(slots_predict_split)
 slots_predict_test <- testing(slots_predict_split)
 
@@ -106,56 +105,58 @@ collect_metrics(final_mod)
 beepr::beep("fanfare")
 
 
+
+
 # Sets --------------------------------------------------------------------
 
-doParallel::registerDoParallel(cores = 5)
-race_ctrl <-
-   control_race(
-      save_pred = TRUE,
-      parallel_over = "everything",
-      save_workflow = TRUE
-   )
-
-race_results <-
-   workflows  |> 
-   workflow_map(
-      "tune_race_anova",
-      seed = 11042004,
-      resamples = folds,
-      grid = 25,
-      control = race_ctrl
-   )
-stacks <- stacks() |> 
-  add_candidates(race_results)
-
-set.seed(11042004)
-ensemble <- blend_predictions(stacks)
-
-autoplot(ensemble, "weights") +
-  geom_text(aes(x = weight + 0.01, label = model), hjust = 0) + 
-  theme(legend.position = "none") +
-  lims(x = c(-0.01, 0.8))
-
-beepr::beep("fanfare")
-
-autoplot(
-  race_results,
-  rank_metric = "roc_auc",  
-  metric = "roc_auc",       
-  select_best = TRUE    
-) +
-  geom_text(aes(y = mean - 1/2, label = wflow_id), angle = 90, hjust = 1) +
-  lims(y = c(3.0, 9.5)) +
-  theme(legend.position = "none")
-
-ensemble <- fit_members(ensemble)
-
-ens_test_pred <-
-  predict(ensemble, slots_predict_test) |> 
-  bind_cols(slots_predict_test)
-reg_metrics <- metric_set(roc_auc)
-ens_test_pred |> 
-  reg_metrics(direction_break, .pred_class)
+# doParallel::registerDoParallel(cores = 5)
+# race_ctrl <-
+#    control_race(
+#       save_pred = TRUE,
+#       parallel_over = "everything",
+#       save_workflow = TRUE
+#    )
+# 
+# race_results <-
+#    workflows  |> 
+#    workflow_map(
+#       "tune_race_anova",
+#       seed = 11042004,
+#       resamples = folds,
+#       grid = 25,
+#       control = race_ctrl
+#    )
+# stacks <- stacks() |> 
+#   add_candidates(race_results)
+# 
+# set.seed(11042004)
+# ensemble <- blend_predictions(stacks)
+# 
+# autoplot(ensemble, "weights") +
+#   geom_text(aes(x = weight + 0.01, label = model), hjust = 0) + 
+#   theme(legend.position = "none") +
+#   lims(x = c(-0.01, 0.8))
+# 
+# beepr::beep("fanfare")
+# 
+# autoplot(
+#   race_results,
+#   rank_metric = "roc_auc",  
+#   metric = "roc_auc",       
+#   select_best = TRUE    
+# ) +
+#   geom_text(aes(y = mean - 1/2, label = wflow_id), angle = 90, hjust = 1) +
+#   lims(y = c(3.0, 9.5)) +
+#   theme(legend.position = "none")
+# 
+# ensemble <- fit_members(ensemble)
+# 
+# ens_test_pred <-
+#   predict(ensemble, slots_predict_test) |> 
+#   bind_cols(slots_predict_test)
+# reg_metrics <- metric_set(roc_auc)
+# ens_test_pred |> 
+#   reg_metrics(direction_break, .pred_class)
 
 
 # DALEX -------------------------------------------------------------------
@@ -229,4 +230,95 @@ ggplot_imp <- function(...) {
 ggplot_imp(explainer_xgb)
 
 
+
+# Model_break -------------------------------------------------------------
+
+slots_predict_break_z <- slots_predict_break |> 
+  mutate(club = as.factor(club), offenseFormation = as.factor(offenseFormation),
+         receiverAlignment = as.factor(receiverAlignment))
+
+#set.seed(11042004)
+set.seed(06062006)
+slots_predict_break_split <- initial_split(slots_predict_break_z, prop = 0.8, strata = start_break_play)
+slots_predict_break_train <- training(slots_predict_break_split)
+slots_predict_break_test <- testing(slots_predict_break_split)
+
+slots_predict_break_recipe <- recipe(start_break_play ~ ., data = slots_predict_break_train) |> 
+  step_unknown(all_nominal_predictors()) |> 
+  step_dummy(all_nominal_predictors())
+
+
+break_folds <- vfold_cv(slots_predict_break_train, v = 5, repeats = 3)
+
+break_xgb_spec <- boost_tree(trees = tune(),tree_depth = tune(),min_n = tune(),
+                       loss_reduction = tune(),sample_size = tune(),mtry = tune(),learn_rate = tune()) |> 
+  set_engine("xgboost") |> 
+  set_mode("regression")
+
+break_xgb_grid <- grid_space_filling(
+  trees(),
+  tree_depth(),
+  min_n(),
+  loss_reduction(),
+  sample_size = sample_prop(),
+  finalize(mtry(), slots_predict_break_train),
+  learn_rate(),
+  size = 75
+)
+
+break_xgb_wf <- workflow() |> 
+  add_recipe(slots_predict_break_recipe) |> 
+  add_model(break_xgb_spec)
+
+doParallel::registerDoParallel(cores = 5)
+
+break_xgb_initial <- 
+  break_xgb_wf |> 
+  tune_grid(resamples = break_folds, grid = break_xgb_grid, 
+            metrics = metric_set(rmse, rsq, mae))
+
+break_best <- break_xgb_res |>
+  select_best(metric = "rmse")
+
+break_final_mod <- break_xgb_res |>
+  extract_workflow() |>
+  finalize_workflow(break_best) |>
+  last_fit(split = slots_predict_break_split)
+
+collect_metrics(break_final_mod)
+beepr::beep("fanfare")
+
+
+# Break VIP ---------------------------------------------------------------
+
+break_vip_features <- c("club", "yardsToGo", "absoluteYardlineNumber", 
+                  "offenseFormation", "receiverAlignment", 
+                  "dist_football", "dist_outside", "cb_align_x", "cb_align_y")
+
+break_vip_train <- 
+  slots_predict_break_train |> 
+  select(all_of(break_vip_features))
+
+break_xgb_base_spec <- boost_tree() |> 
+  set_engine("xgboost") |> 
+  set_mode("regression")
+
+break_xgb_base_wf <-
+  workflow() |> 
+  add_recipe(slots_predict_break_recipe) |> 
+  add_model(break_xgb_base_spec)
+
+break_xgb_fit <- break_xgb_base_wf |> 
+  fit(data = slots_predict_break_train)
+
+break_explainer_xgb <- 
+  explain_tidymodels(
+    break_xgb_fit,
+    data = break_vip_train,
+    y = slots_predict_break_train$start_break_play,
+    label = "xgb (Break)",
+    verbose = FALSE
+  ) |> model_parts()
+
+ggplot_imp(break_explainer_xgb)
 

@@ -22,6 +22,11 @@ tracking_2353 <- joined |>
 plays_2353 <- plays_filtering |> 
   filter(gameId == 2022091108 & playId == 2353)
 
+plays_1570 <- plays_filtering |> 
+  filter(gameId == 2022091109 & playId == 1570)
+
+tracking_1570 <- joined |> 
+  filter(gameId == 2022091109 & playId == 1570)
 
 # Viz ---------------------------------------------------------------------
 
@@ -37,3 +42,4 @@ makeViz(tracking_824, plays_824, "TB", "DAL", "#a71930", "#0076B6", 2022, 5,
 makeViz(tracking_2353, plays_2353, "TEN", "NYG", "#0076B6", "#a71930", 2022, 3)
 
 
+makeViz(tracking_1570, plays_1570, "JAX", "WAS", "#0076B6", "#a71930", 2022, 6)
