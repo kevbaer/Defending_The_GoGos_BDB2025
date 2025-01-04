@@ -151,7 +151,7 @@ makeViz <- function(trackingDataset, playDataset, club1, club2, club1col, club2c
           }:{
             end
           }),
-          aes(160 / 3 - x + 1, 66, label = deets, fill = "lightblue", size = 3)
+          aes(160 / 3 - x + 1, 64, label = deets, fill = "lightblue", size = 3)
         )
       }
     }

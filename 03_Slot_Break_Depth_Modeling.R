@@ -3,7 +3,7 @@
 library(tidymodels)
 library(DALEXtra)
 source("01_Data_Manip.R")
-source("08_ggplot_imp.R")
+source("08_ggplot_imp_func_and_extra_code.R")
 
 # Modeling ----------------------------------------------------------------
 
@@ -132,4 +132,78 @@ break_explainer_xgb <-
     verbose = FALSE
   ) |> model_parts()
 
+break_explainer_no_model <-
+  explain_tidymodels(
+    break_xgb_fit,
+    data = break_vip_train,
+    y = slots_predict_break_z$start_break_play,
+    label = "xgb (Break)",
+    verbose = FALSE
+  )
+
 ggplot_imp(break_explainer_xgb)
+
+
+# Break SHAP --------------------------------------------------------------
+set.seed(11042004)
+Carter <- slots_3 |>
+  filter(gameId == 2022100206 & playId == 1386) |>
+  filter(displayName == "DeAndre Carter")
+
+Everett <- slots_3 |>
+  filter(gameId == 2022100206 & playId == 1386) |>
+  filter(displayName == "Gerald Everett")
+
+
+Carter_breakdown <-
+  predict_parts(
+    explainer = break_explainer_no_model,
+    new_observation = Carter, type = "shap", B = 20
+  )
+Everett_breakdown <-
+  predict_parts(
+    explainer = break_explainer_no_model,
+    new_observation = Everett, type = "shap", B = 20
+  )
+
+
+Everett_breakdown %>%
+  group_by(variable) %>%
+  mutate(mean_val = mean(contribution)) %>%
+  ungroup() %>%
+  mutate(variable = fct_reorder(variable, abs(mean_val))) %>%
+  ggplot(aes(contribution, variable, fill = mean_val > 0)) +
+  geom_col(
+    data = ~ distinct(., variable, mean_val),
+    aes(mean_val, variable),
+    alpha = 0.5
+  ) +
+  geom_boxplot(width = 0.5) +
+  theme_bw() +
+  theme(legend.position = "none") +
+  scale_fill_brewer(palette = "Dark2", direction = -1) +
+  labs(y = NULL) +
+  scale_x_continuous(limits = c(-2, 2)) +
+  ggtitle("Gerald Everett Route Break SHAP Values (20 Bootstrapped Runs)") +
+  theme(axis.text.y = element_text(size = 13), plot.title = element_text(size = 16))
+
+
+Carter_breakdown %>%
+  group_by(variable) %>%
+  mutate(mean_val = mean(contribution)) %>%
+  ungroup() %>%
+  mutate(variable = fct_reorder(variable, abs(mean_val))) %>%
+  ggplot(aes(contribution, variable, fill = mean_val > 0)) +
+  geom_col(
+    data = ~ distinct(., variable, mean_val),
+    aes(mean_val, variable),
+    alpha = 0.5
+  ) +
+  geom_boxplot(width = 0.5) +
+  theme_bw() +
+  theme(legend.position = "none") +
+  scale_fill_brewer(palette = "Dark2", direction = -1) +
+  labs(y = NULL) +
+  scale_x_continuous(limits = c(-2, 2)) +
+  ggtitle("DeAndre Carter Route Break SHAP Values (20 Bootstrapped Runs)") +
+  theme(axis.text.y = element_text(size = 13), plot.title = element_text(size = 16))

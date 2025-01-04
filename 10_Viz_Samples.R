@@ -12,16 +12,16 @@ source("09_makeVizFunc.R")
 # tracking_857 <- joined |>
 #   filter(gameId == 2022100201 & playId == 1271)
 
-plays_2876 <- plays_filtering |>
-  filter(gameId == 2022100905 & playId == 2876)
-tracking_2876 <- joined |>
-  filter(gameId == 2022100905 & playId == 2876)
-
-tracking_2353 <- joined |>
-  filter(gameId == 2022091108 & playId == 2353)
-
-plays_2353 <- plays_filtering |>
-  filter(gameId == 2022091108 & playId == 2353)
+# plays_2876 <- plays_filtering |>
+#   filter(gameId == 2022100905 & playId == 2876)
+# tracking_2876 <- joined |>
+#   filter(gameId == 2022100905 & playId == 2876)
+#
+# tracking_2353 <- joined |>
+#   filter(gameId == 2022091108 & playId == 2353)
+#
+# plays_2353 <- plays_filtering |>
+#   filter(gameId == 2022091108 & playId == 2353)
 
 plays_1386 <- plays_filtering |>
   filter(gameId == 2022100206 & playId == 1386)
@@ -41,23 +41,26 @@ tracking_1386 <- joined |>
 
 at_snap <- slots_3 |>
   filter(gameId == 2022100206 & playId == 1386) |>
+  mutate(.pred = "outside") |>
   mutate(deets = glue(
     "player: {displayName},
     cb_align_x: {format(cb_align_x, digits = 3)}
     cb_align_y: {format(cb_align_y, digits = 3)}
     dist_to_football: {format(dist_football, digits = 3)}
-    dist_to_outside_WR: {format(dist_outside, digits = 3)}"
+    dist_to_outside_WR: {format(dist_outside, digits = 3)}
+
+    prediction: {.pred}"
   ))
 
 tracking_1386_up <- tracking_1386 |>
   left_join(at_snap)
 
-makeViz(tracking_1386_up, plays_1386, "LAC", "HOU", "#0080C6", "#03202f", 2022, 6,
+makeViz(tracking_1386_up, plays_1386, "LAC", "HOU", "#0080C6", "#03202f", 2022, 4,
   frameStart = 1, frameEnd = 93, yardlow = 55, yardhigh = 105, endFreeze = 50, annotate = TRUE,
   toSave = TRUE, saveName = "anim_1386"
 )
 
-makeViz(tracking_1386_up, plays_1386, "LAC", "HOU", "#0080C6", "#03202f", 2022, 6,
+makeViz(tracking_1386_up, plays_1386, "LAC", "HOU", "#0080C6", "#03202f", 2022, 4,
   frameStart = 83, yardlow = 55, yardhigh = 105, endFreeze = 50
 )
 
