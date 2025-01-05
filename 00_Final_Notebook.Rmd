@@ -1,31 +1,126 @@
 ---
-title: "Defending The Go-Gos: Predicting Slot Receiver Routes"
-author: "Kevin Baer"
-date: "`r Sys.Date()`"
 output: html_document
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
+# Defending The Go-Gos: Predicting Slot Receiver Routes
 
-## R Markdown
+### By Kevin Baer, UCLA Second Year Undergraduate
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+## Introduction
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+***"We Got The Beat"*** (1981), The Go-Go's most famous song, is an apt title for what this paper intends to accomplish. But who are The Go-Go's and what does "the beat" mean?
 
-```{r cars}
-summary(cars)
-```
+The following chart provides the motivation for this paper's topic.
 
-## Including Plots
+![](16_Intro_Graph.png)
 
-You can also embed plots, for example:
+Over the past decade, offenses have used more formations with slot receivers and defenses have increased their zone coverage usage in a very similar manner. These are not the only two trends in the league, of course, but certainly large ones and likely at least somewhat related. Given that offense is largely proactive and defense is largely reactive, as well as some understanding of football scheme, it is reasonable to assume that the increase in zone coverage is, in part, because of the increase in slot receiver usage. But why and what can defenses do about it?
 
-```{r pressure, echo=FALSE}
-plot(pressure)
-```
+Why have defenses been playing less man? One reason is that defending slot receivers in man coverage is hard. Slot receivers are often off the line of scrimmage, so they can't be pressed. But more importantly, they often have a "two-way go", option, or choice route, terms I'll use somewhat interchangeably to refer to routes where the receiver can choose which direction to go based on the defense. Against man, these routes become one-cut linear runaways based on the leverage of the CB, while against zone they'll sit down in a hole.
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+Playing man coverage in the NFL on outside receivers is difficult enough even though you have the sideline and the longer throws to get the ball there. **To get *"The Beat"* on the Go-Gos, I used pre-snap indicators to predict the routes run by slot receivers against man coverage.**
 
+## **Defining the Scope**
+
+Data preparation is more important than any predictive algorithm. Here's what data made the cut.
+
+All plays used were:
+
+1.  between Week 1 and 9 of the 2022 NFL season (the full length of the given dataset)
+2.  dropbacks
+3.  man coverage
+4.  not screen passes, trick plays, nor spikes[^1]
+
+[^1]:
+    1.  As always, a shoutout to FTN and nflverse for their free play-level data.
+
+To determine which players classified as slot receivers, given we did not receive stance information nor is that easily calculable with this dataset, I used the following criteria.
+
+Slot receivers must be:
+
+1.  on offense
+2.  in between the left and right most offensive players
+3.  running a route
+4.  outside of 5 yards linearly from the football[^2]
+
+[^2]:
+    2.  (this cut out basically all TEs and RBs)
+
+## Classifying Routes
+
+The dataset does not include detailed information on which routes the player run. This means we'll do it by hand, using the tracking data to determine the two critical parts of a route: direction and depth. A route going inside is very different when run at 5 vs. 15 yards and likewise a cut at 7 yards is difficult to defend when you don't know whether it'll be inside or outside.[^3]
+
+[^3]:
+    3)  Note the use of inside/outside versus left/right to treat routes on both sides of the field the same.
+
+![](17_Meyers_direction.gif)
+
+Here we can see the route direction in action. The five skill position players plus the QB and ball are shown. We can see that the TE, outer receivers, and RB are not highlighted despite running routes, demonstrating the criteria above were successful. Jakobi Meyers, in the slot here, is running an inside breaking route, and we can see how by using his movement through space we can can classify his direction as vert (short for vertical) and then eventually inside, once he has maintained an inside cut angle (in this case between 235 and 315 degrees clockwise) for 0.5 seconds.
+
+This frame by frame classification is then turned into one of four possible play directions: Inside, Outside, Vertical, or Both. If a route contains zero cuts, the entire route is on the vertical plane, and thus a vertical route. Some examples include curls, gos, and skinny posts. If a route solely contains vert and inside directions it's an inside route – an In, drag, slant and so on. Outside works the same isolating outs, corners, and flat routes. Both means that a significant cut was taken inside and outside — returns, whips, angle routes.
+
+Now that we have classified the direction of the route, it's important to understand where the route break occurs. For our inside and outside breaking plays, there is a frame where the direction of the route first occurs — this represents where the route break starts.
+
+![](18_Meyers_Depth.gif)
+
+Watch above and see how the start break only pops up once Meyers commits to the cut. This is purposeful, we don't want fakes or slight route widenings to mess with our data or results. We now have a direction – Inside – and depth – 9.15 – to describe this route. We'll build two separate machine learning models to predict these characteristics.
+
+## Feature Engineering
+
+The goal is to predict break direction and depth from pre-snap indicators. I used five from the original dataset and four that were specifically created to improve accuracy. Here they are, as well as their values for the Jakobi Meyers play shown above:
+
+1.  Offensive Team: NE
+
+2.  Yards To Go: 10
+
+3.  Absolute Yardline: 19
+
+4.  Offense Formation: Shotgun
+
+5.  Receiver Alignment: 3x1
+
+    ------------------------------------------------------------------------
+
+6.  Distance to Football: 11.24
+
+7.  Distance to Outside Receiver: 8.07
+
+8.  Cornerback X Alignment: 0.44
+
+9.  Cornerback Y Alignment: 4.52
+
+The four at bottom represent the precise location of the slot receiver and the man to man defender (referred to as the slot corner). The slot corner's alignment is relative to the receiver, a positive x alignment indicating he's on the outside shoulder by 0.44 yards. The y alignment shows that he's playing about 5 yards of cushion off the receiver.
+
+## Modeling Process and Example Play
+
+Very briefly, I tested a variety of models, ensembles, and sets of variables. I chose the XGBoost model and conducted train and test on data from weeks 1-7 with hyperparameter tuning, holding the weeks 8-9 data as a final test set. I primarily tracked the Area Under the Receiver Operating Characteristic Curve (ROC AUC) score for the categorical direction prediction, and the Root Mean Square Error (RMSE) for the numerical break depth prediction.
+
+For the prediction of break direction:
+
+1.  ROC AUC score of **.701** on test set for weeks 1-7
+2.  ROC AUC score of **.639** on weeks 8-9
+
+For the prediction of break depth:
+
+1.  RMSE score of **3.99** yards on test set for weeks 1-7
+2.  RMSE score of **4.17** yards on weeks 8-9
+
+Here's a GIF of a play between the Chargers and Texans that demonstrates the pre-snap process and predictions values.
+
+![](http://localhost:29212/session/preview.gif?viewer_pane=1&capabilities=1&host=http%3A%2F%2F127.0.0.1%3A13579)
+
+## Analysis
+
+Besides the actual predictions, which could be useful in certain scenarios for a football staff, what else can we take away from this process to help win football games? To start we'll use SHAP values to look at both DeAndre Carter and Gerald Everett's route break predictions for the above play.
+
+![](15_Carter_Break_Shap.png)
+
+We see that Carter is expected to run a shorter route than average due to his proximity to the outside receiver, and the specific alignment of the cornerback. This is somewhat neutralized by him being further away to the football than most slots, indicating he might be running a deeper route by about 0.6 of a yard. This leads to a projection of a route with a break at 2.36 yards.
+
+![](14_Everett_Break_Shap.png)
+
+Everett, on the other hand, is projected to break further downfield, based on the cornerback's close alignment and being a far distance from his outside receiver. This provides useful information into the certain features that drive the predictions.
+
+When looking at the model as a whole, I chose to use Permutation-Based Variable Importance.
+
+![](12_break_permutation_vip.png)

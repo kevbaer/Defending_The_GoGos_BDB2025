@@ -47,4 +47,4 @@ b <- data |>
   theme(title = element_text(size = 16.25))
 
 
-a + b
+b + a

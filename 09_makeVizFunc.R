@@ -3,7 +3,8 @@ library(glue)
 
 makeViz <- function(trackingDataset, playDataset, club1, club2, club1col, club2col,
                     yearNum, weekNum, yardlow = 0, yardhigh = 120, frameStart = NA,
-                    frameEnd = NA, toSave = FALSE, saveName = NA, endFreeze = 8, annotate = FALSE) {
+                    frameEnd = NA, toSave = FALSE, saveName = NA, endFreeze = 8,
+                    startFreeze = 0, annotate = FALSE) {
   start_event <- trackingDataset |>
     distinct(gameId, playId, frameId, event) |>
     filter(event %in% c("ball_snap", "autoevent_ballsnap", "snap_direct")) |>
@@ -35,7 +36,7 @@ makeViz <- function(trackingDataset, playDataset, club1, club2, club1col, club2c
   } else {
     end <- frameEnd
   }
-  length <- (end - begin) + 1 + endFreeze
+  length <- (end - begin) + 1 + endFreeze + startFreeze
 
 
   ex <- trackingDataset |>
@@ -165,6 +166,7 @@ makeViz <- function(trackingDataset, playDataset, club1, club2, club1col, club2c
     height = (40 * tot) / 3,
     fps = 10,
     end_pause = endFreeze,
+    start_pause = startFreeze,
     res = 105,
   )
 
