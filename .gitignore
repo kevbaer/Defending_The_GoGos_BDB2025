@@ -2,3 +2,6 @@
 .Rproj.user
 data/tracking_train.parquet
 data/tracking_test.parquet
+00_Final_Notebook.html
+.gitattributes
+.gitignore
