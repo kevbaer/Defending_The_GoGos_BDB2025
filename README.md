@@ -1,6 +1,7 @@
 # Defending The Go-Gos: Predicting Slot Receiver Routes
 
 __Defending The Go-Gos__ is a paper on predicting slot receiver routes against man coverage using pre-snap indicators. Slot receivers are difficult to defend in part due to their two-way go or option route possibilities. By predicting the direction and depth of breaks, we can help slot corners play man coverage and allow greater defensive success and diversity of scheme.  
+
 The full submission can be viewed on Kaggle [here](https://www.kaggle.com/code/kevinbaer/defending-the-go-gos-predicting-slot-wr-routes)!
 
 By Kevin Baer, UCLA Second Year Undergraduate Student
