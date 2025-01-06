@@ -20,6 +20,8 @@ Hester J, Bryan J (2024). _glue: Interpreted String Literals_. R package version
 
 Kuhn et al., (2020). Tidymodels: a collection of packages for modeling and machine learning using tidyverse principles. https://www.tidymodels.org
 
+Lopez M, Bliss T, Blake A, Mooney P, Howard A (2024). NFL Big Data Bowl 2025. Kaggle, <https://kaggle.com/competitions/nfl-big-data-bowl-2025>. 
+
 Maksymiuk S, Gosiewska A, Biecek P (2020). “Landscape of R packages for eXplainable Artificial Intelligence.” _arXiv_. Pages 6, 7, 11, 15, <https://arxiv.org/abs/2009.13248>.
 
 Nguyen Q, Jiang L, Ellingwood M, Yurko R (2024). "Momentum-based fractional tackles". <https://www.kaggle.com/code/tindata/momentum-based-fractional-tackles> 
