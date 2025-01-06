@@ -57,11 +57,11 @@ tracking_1386_up <- tracking_1386 |>
 
 makeViz(tracking_1386_up, plays_1386, "LAC", "HOU", "#0080C6", "#03202f", 2022, 4,
   frameStart = 1, frameEnd = 93, yardlow = 55, yardhigh = 105, endFreeze = 50, annotate = TRUE,
-  toSave = TRUE, saveName = "13_presnap_anim_1386"
 )
 
-makeViz(tracking_1386_up, plays_1386, "LAC", "HOU", "#0080C6", "#03202f", 2022, 4,
-  frameStart = 83, yardlow = 55, yardhigh = 105, endFreeze = 50
+makeViz(tracking_1386, plays_1386, "LAC", "HOU", "#0080C6", "#03202f", 2022, 4,
+  frameStart = 93, yardlow = 55, yardhigh = 105, endFreeze = 25,
+  toSave = TRUE, saveName = "19_full_anim_1386"
 )
 
 
